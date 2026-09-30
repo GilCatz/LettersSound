@@ -2,7 +2,11 @@
 <html lang="he" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>קול האותיות</title>
+<style>
+  html, body { margin:0; padding:0; }
+</style>
 <title>קול האותיות</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -316,18 +320,38 @@
   .tips strong{ color:var(--teal-deep); }
   footer.credit{ text-align:center; color:var(--ink-soft); font-size:.76rem; padding-top:4px; }
 
+  /* ---------- analytics ---------- */
+  .analytics-intro p{ color:var(--ink-soft); font-size:.9rem; line-height:1.6; text-align:center; margin:0; }
+  .analytics-summary{ display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin:8px 0 2px; }
+  .analytics-chip{
+    background:var(--surface-soft); border:2px solid var(--line); border-radius:999px;
+    padding:8px 16px; font-size:.83rem; font-weight:700; color:var(--ink);
+  }
+  .analytics-chip strong{ font-size:.95rem; }
+  .analytics-chip.good strong{ color:var(--correct); }
+  .analytics-chip.warn strong{ color:var(--wrong); }
+  .analytics-empty{ text-align:center; color:var(--ink-soft); padding:18px 10px; font-size:.92rem; }
+  .analytics-list{ display:flex; flex-direction:column; gap:9px; }
+  .stat-row{
+    display:flex; align-items:center; gap:12px; background:var(--surface);
+    border-radius:16px; padding:10px 14px; box-shadow:0 4px 12px var(--shadow);
+  }
+  .stat-row .stat-letter{
+    font-family:"Secular One",sans-serif; font-size:1.7rem; color:var(--ink);
+    width:2.1rem; flex:none; text-align:center;
+  }
+  .stat-row .stat-bar-wrap{ flex:1; height:10px; background:var(--surface-soft); border-radius:999px; overflow:hidden; }
+  .stat-row .stat-bar{ height:100%; border-radius:999px; background:var(--correct); transition:width .3s; }
+  .stat-row.weak .stat-bar{ background:var(--wrong); }
+  .stat-row .stat-detail{ font-size:.72rem; color:var(--ink-soft); flex:none; min-width:96px; text-align:left; }
+  .analytics-actions{ display:flex; justify-content:center; padding-top:6px; }
+
   @media (max-width:420px){
     .quiz-stimulus{ flex-direction:column; gap:6px; }
     .brand-tag{ display:none; }
   }
 </style>
-<style>
-  html, body { margin:0; padding:0; height:100%; }
-  *, *::before, *::after { box-sizing:border-box; }
-  [hidden] { display:none !important; }
-</style>
-</head>
-<body>
+
 <div class="app" dir="rtl" lang="he">
 
   <header class="topbar">
@@ -351,6 +375,7 @@
     <button class="tab" role="tab" id="tabBtn-explore" aria-selected="true" data-view="explore">🔤 לומדים את הסרגל</button>
     <button class="tab" role="tab" id="tabBtn-quizLetter" aria-selected="false" data-view="quizLetter">🧩 איזו אות שומעים?</button>
     <button class="tab" role="tab" id="tabBtn-quizPicture" aria-selected="false" data-view="quizPicture">🖼️ מצאו את הציור</button>
+    <button class="tab" role="tab" id="tabBtn-analytics" aria-selected="false" data-view="analytics">📊 התקדמות</button>
   </nav>
 
   <div class="audio-status" id="audioStatus" role="status" hidden></div>
@@ -386,6 +411,18 @@
       <div class="feedback" id="feedbackPicture" aria-live="polite"></div>
     </div>
     <div id="quizAreaPicture"></div>
+  </section>
+
+  <!-- ================= ANALYTICS / PROGRESS ================= -->
+  <section data-view="analytics" id="view-analytics" hidden>
+    <div class="analytics-intro">
+      <p>כאן אפשר לראות סיכום התקדמות: באילו אותיות הילד/ה מתקשה יותר, לפי הטעויות והזמן שלוקח לענות במשחקי התרגול.</p>
+    </div>
+    <div class="analytics-summary" id="analyticsSummary"></div>
+    <div class="analytics-list" id="analyticsList"></div>
+    <div class="analytics-actions">
+      <button class="ghost-btn" id="resetStatsBtn" type="button">איפוס נתוני ההתקדמות</button>
+    </div>
   </section>
 
   <footer class="credit">מבוסס על סרגל האותיות ממשחק "קול האותיות" · תוכנית אורייניות תקנית "מישורים"</footer>
@@ -432,6 +469,108 @@
   var totalStarsEl = document.getElementById("totalStars");
   function renderStars(){ totalStarsEl.textContent = String(totalStars); }
   renderStars();
+
+  /* ---------------- progress analytics (per-viewer convenience only) ----------------
+     Tracks, per letter, how many correct/wrong answers the child gave across both
+     quiz games, plus average response time, so we can surface which letters need
+     more practice. Stored the same way as the star count: localStorage, best-effort. */
+  function loadStats(){
+    try{
+      var raw = localStorage.getItem("kolotiot_stats_v1");
+      var parsed = raw ? JSON.parse(raw) : {};
+      return (parsed && typeof parsed === "object") ? parsed : {};
+    }catch(e){ return {}; }
+  }
+  function saveStats(obj){
+    try{ localStorage.setItem("kolotiot_stats_v1", JSON.stringify(obj)); }catch(e){}
+  }
+  var LETTER_STATS = loadStats();
+
+  function recordAnswer(letter, isCorrect, elapsedMs){
+    if(!letter) return;
+    var s = LETTER_STATS[letter];
+    if(!s){ s = { correct:0, wrong:0, timeTotal:0, timeCount:0 }; LETTER_STATS[letter] = s; }
+    if(isCorrect){ s.correct++; } else { s.wrong++; }
+    if(typeof elapsedMs === "number" && elapsedMs >= 0 && elapsedMs < 120000){
+      s.timeTotal += elapsedMs;
+      s.timeCount++;
+    }
+    saveStats(LETTER_STATS);
+  }
+
+  function computeStatRows(){
+    var rows = [];
+    LETTERS.forEach(function(item){
+      var s = LETTER_STATS[item.letter];
+      var attempts = s ? (s.correct + s.wrong) : 0;
+      if(!attempts) return;
+      rows.push({
+        letter: item.letter,
+        correct: s.correct,
+        wrong: s.wrong,
+        attempts: attempts,
+        accuracy: s.correct / attempts,
+        avgTime: s.timeCount > 0 ? (s.timeTotal / s.timeCount) : null
+      });
+    });
+    return rows;
+  }
+
+  function renderAnalytics(){
+    var summaryEl = document.getElementById("analyticsSummary");
+    var listEl = document.getElementById("analyticsList");
+    if(!summaryEl || !listEl) return;
+    var rows = computeStatRows();
+    if(!rows.length){
+      summaryEl.innerHTML = "";
+      listEl.innerHTML = '<div class="analytics-empty">עדיין אין מספיק נתונים 🙂 שחקו כמה סבבים במשחקי התרגול, והנתונים יופיעו כאן.</div>';
+      return;
+    }
+    var sorted = rows.slice().sort(function(a, b){
+      if(a.accuracy !== b.accuracy) return a.accuracy - b.accuracy;
+      var at = a.avgTime == null ? 0 : a.avgTime;
+      var bt = b.avgTime == null ? 0 : b.avgTime;
+      return bt - at;
+    });
+    var totalAttempts = rows.reduce(function(sum, r){ return sum + r.attempts; }, 0);
+    var totalCorrect = rows.reduce(function(sum, r){ return sum + r.correct; }, 0);
+    var overallAcc = totalAttempts ? Math.round((totalCorrect / totalAttempts) * 100) : 0;
+    var weakest = sorted.filter(function(r){ return r.accuracy < 1; }).slice(0, 3);
+    var strongest = sorted.slice().reverse().filter(function(r){ return r.accuracy === 1; }).slice(0, 3);
+
+    var chips = [];
+    chips.push('<div class="analytics-chip">סה"כ תשובות: <strong>' + totalAttempts + '</strong></div>');
+    chips.push('<div class="analytics-chip ' + (overallAcc >= 80 ? "good" : "warn") + '">דיוק כללי: <strong>' + overallAcc + '%</strong></div>');
+    if(weakest.length){
+      chips.push('<div class="analytics-chip warn">כדאי לתרגל עוד: <strong>' + weakest.map(function(r){ return r.letter; }).join(" ") + '</strong></div>');
+    }
+    if(strongest.length){
+      chips.push('<div class="analytics-chip good">שולט/ת מצוין: <strong>' + strongest.map(function(r){ return r.letter; }).join(" ") + '</strong></div>');
+    }
+    summaryEl.innerHTML = chips.join("");
+
+    listEl.innerHTML = sorted.map(function(r){
+      var pct = Math.round(r.accuracy * 100);
+      var weakClass = r.accuracy < 0.7 ? " weak" : "";
+      var timeText = r.avgTime != null ? (Math.round(r.avgTime / 100) / 10) + " שנ׳ בממוצע" : "";
+      return (
+        '<div class="stat-row' + weakClass + '">' +
+          '<div class="stat-letter">' + r.letter + '</div>' +
+          '<div class="stat-bar-wrap"><div class="stat-bar" style="width:' + pct + '%"></div></div>' +
+          '<div class="stat-detail">' + pct + '% · ' + r.correct + '/' + r.attempts + (timeText ? " · " + timeText : "") + '</div>' +
+        '</div>'
+      );
+    }).join("");
+  }
+
+  var resetStatsBtn = document.getElementById("resetStatsBtn");
+  if(resetStatsBtn){
+    resetStatsBtn.addEventListener("click", function(){
+      LETTER_STATS = {};
+      saveStats(LETTER_STATS);
+      renderAnalytics();
+    });
+  }
 
   /* ---------------- audio ----------------
      Every letter carries a real, pre-recorded Hebrew pronunciation of its word
@@ -501,7 +640,8 @@
   var views = {
     explore: document.getElementById("view-explore"),
     quizLetter: document.getElementById("view-quizLetter"),
-    quizPicture: document.getElementById("view-quizPicture")
+    quizPicture: document.getElementById("view-quizPicture"),
+    analytics: document.getElementById("view-analytics")
   };
   function selectTab(name){
     tabs.forEach(function(t){ t.setAttribute("aria-selected", String(t.dataset.view === name)); });
@@ -509,6 +649,7 @@
     stopPlayAll();
     if(name === "quizLetter" && !quizLetterState.active) startQuiz("Letter");
     if(name === "quizPicture" && !quizPictureState.active) startQuiz("Picture");
+    if(name === "analytics") renderAnalytics();
   }
   tabs.forEach(function(t){
     t.addEventListener("click", function(){ selectTab(t.dataset.view); });
@@ -617,6 +758,7 @@
     var distractors = sample(LETTERS, 3, targetIdx);
     var options = shuffle([target].concat(distractors));
     state.current = { target:target, options:options };
+    state.shownAt = Date.now();
 
     var area = document.getElementById("quizArea"+kind);
     area.innerHTML = "";
@@ -672,6 +814,7 @@
     if(state.locked) return;
     var feedbackEl = document.getElementById("feedback"+kind);
     var isRight = chosen.letter === target.letter;
+    var elapsed = (typeof state.shownAt === "number") ? (Date.now() - state.shownAt) : null;
 
     if(isRight){
       state.locked = true;
@@ -679,6 +822,7 @@
       feedbackEl.textContent = "🎉 כל הכבוד!";
       feedbackEl.className = "feedback good";
       state.correct++;
+      recordAnswer(target.letter, true, elapsed);
       totalStars++; renderStars(); saveStars(totalStars);
       Array.prototype.forEach.call(optWrap.children, function(b){ b.disabled = true; });
       state.round++;
@@ -688,6 +832,7 @@
       btnEl.disabled = true;
       feedbackEl.textContent = "כמעט! נסו שוב 🙂";
       feedbackEl.className = "feedback bad";
+      recordAnswer(target.letter, false, elapsed);
     }
   }
 
@@ -735,5 +880,5 @@
 
 })();
 </script>
-</body>
+
 </html>
